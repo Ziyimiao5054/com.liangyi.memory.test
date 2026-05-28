@@ -1,0 +1,345 @@
+<template>
+  <div class="page">
+
+    <!-- 全屏滚动容器 -->
+    <scroll id="scrollId" class="content-full" scroll-y="true" bounces="true" onclick="onTxtClick">
+
+      <!-- ========== 方屏顶部栏（条件显示，默认显示）========== -->
+      <div show="{{showToolbar}}" class="header-area">
+        <img src="/common/hd.png" class="header-bg" />
+        <text class="hd-time">{{ nowTime }}</text>
+        <text class="hd-title">日志</text>
+        <img src="/common/back.png" @click="goBack" class="hd-back" />
+      </div>
+      <!-- ========== 胶囊屏顶部栏（条件显示）========== -->
+      <div show="{{showToolbar}}" class="pill-header">
+        <div class="pill-more-wrap" @click="goBack">
+          <div class="pill-more"></div>
+        </div>
+      </div>
+
+      <!-- ========== 日志文本 ========== -->
+      <div class="text-container">
+        <text class="log-text" style="font-size: {{fontSize}}px; line-height: {{lineHeight}}px;">
+          {{ logText }}
+        </text>
+      </div>
+    </scroll>
+
+    <!-- ========== 底部工具栏（条件显示） ========== -->
+    <img show="{{showToolbar}}" class="bt-bar" src="/common/bt.png" />
+    <number_choose show="{{showToolbar}}" class="num-choose"
+                   max="50" min="20" step="1" unit="px" value="{{fontSize}}"
+                   name="字体大小" @change="onFontChange"></number_choose>
+  </div>
+</template>
+
+<script>
+/* ====== 系统模块导入 ====== */
+import router from "@system.router"
+import file from "@system.file"
+
+var LOG_FILE = "internal://files/memtest_result.txt"   /* 日志文件路径 */
+
+export default {
+  private: {
+    nowTime: "00:00",           /* 顶栏时钟 */
+    timer: null,                 /* 时钟定时器 */
+    logText: "加载中…",         /* 日志文本内容 */
+    showToolbar: true,           /* 是否显示顶部/底部工具栏（点击切换） */
+    fontSize: 28,                /* 字体大小，默认28px */
+    lineHeight: 36               /* 行高，根据字号自动计算 */
+  },
+
+  /** 页面初始化：启动时钟、加载日志 */
+  onInit() {
+    var self = this
+    self.updateTime()
+    self.timer = setInterval(function() {
+      self.updateTime()
+    }, 1000)
+    this.loadLog()
+  },
+
+  /** 页面销毁：清除定时器 */
+  onDestroy() {
+    clearInterval(this.timer)
+  },
+
+  /** 更新顶栏时钟 */
+  updateTime() {
+    var d = new Date()
+    var hh = ("0" + d.getHours()).slice(-2)
+    var mm = ("0" + d.getMinutes()).slice(-2)
+    this.nowTime = hh + ":" + mm
+  },
+
+  /** 读取日志文件 */
+  loadLog() {
+    var self = this
+    file.readText({
+      uri: LOG_FILE,
+      success: function(data) {
+        self.logText = data.text || ""
+      },
+      fail: function() {
+        self.logText = "无法读取日志文件"
+      }
+    })
+  },
+
+  /** 点击文本区域：切换工具栏显隐（全屏查看日志时隐藏工具栏） */
+  onTxtClick() {
+    this.showToolbar = !this.showToolbar
+  },
+
+  /** 字体大小变更回调：同步更新行高 */
+  onFontChange(e) {
+    this.fontSize = e.detail.value
+    /* 行高 = -0.01 * fontSize² + 1.62 * fontSize - 3.23（二次拟合公式） */
+    this.lineHeight = parseInt((-0.01) * (this.fontSize * this.fontSize) + 1.62 * this.fontSize - 3.23)
+    if (this.lineHeight < this.fontSize + 4) {
+      this.lineHeight = this.fontSize + 4    /* 最低行高保证 */
+    }
+  },
+
+  goBack() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+/* ====== 全局页面 ====== */
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #000000;
+}
+
+/* ====== 全屏滚动容器 ====== */
+.content-full {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+}
+
+/* ====== 方屏顶部 Header ====== */
+.header-area {
+  width: 336px;
+  height: 102px;               /* 顶部栏高度，与 hd.png 匹配 */
+  position: relative;
+}
+.header-bg {
+  width: 336px;
+  height: 102px;
+}
+.hd-time {
+  position: absolute;
+  left: 78px;
+  top: 7px;
+  width: 180px;
+  height: 32px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);   /* 半透明白色时间 */
+}
+.hd-title {
+  position: absolute;
+  left: 78px;
+  top: 35px;
+  width: 180px;
+  height: 42px;
+  text-align: center;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.hd-back {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 72px;
+  height: 72px;
+}
+
+/* ====== 日志文本内容区域 ====== */
+.text-container {
+  padding: 6px 16px 20px 16px;  /* 上下左右内边距 */
+  width: 336px;
+  flex-direction: column;
+}
+.log-text {
+  width: 304px;                /* 336 - 16*2 */
+  text-align: left;
+  color: #ffffff;
+  font-weight: bold;
+  word-break: break-all;       /* 长文本自动换行，防止溢出 */
+}
+
+/* ====== 底部工具栏 ====== */
+.bt-bar {
+  position: absolute;
+  left: 0;
+  top: 378px;                  /* 底部工具栏 Y 坐标（480-102=378） */
+  width: 336px;
+  height: 102px;
+}
+.num-choose {
+  position: absolute;
+  top: 402px;                  /* 字体大小选择器 Y 坐标 */
+}
+
+/* ====== 胶囊屏顶部 Header（方屏默认隐藏）====== */
+.pill-header {
+  display: none;
+}
+
+/* ========== 胶囊屏适配 ========== */
+/* 手环9（192×490, ≤100dp 宽度） */
+@media (shape: pill-shaped) and (max-width: 100) {
+  .header-area {
+    display: none;
+  }
+  .pill-header {
+    display: flex;
+    width: 192px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 92px;
+    height: 72px;
+    border-radius: 32px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 92px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);    /* 胶囊屏返回按钮 */
+    background-size: 92px 72px;
+    border-radius: 32px;
+  }
+  .page {
+    width: 192px;
+    height: 490px;
+  }
+  .content-full {
+    width: 192px;
+    height: 490px;
+  }
+  .header-area {
+    width: 192px;
+    height: 80px;
+  }
+  .header-bg {
+    width: 192px;
+    height: 80px;
+  }
+  .hd-title {
+    width: 192px;
+    top: 22px;
+    font-size: 22px;
+  }
+  .hd-back {
+    left: 4px;
+    top: 4px;
+    width: 52px;
+    height: 52px;
+  }
+  .text-container {
+    padding: 6px 10px 20px 10px;
+    width: 192px;
+  }
+  .log-text {
+    width: 172px;              /* 192 - 10*2 */
+  }
+  .bt-bar {
+    top: 388px;                /* 490-102=388 */
+    width: 192px;
+    height: 102px;
+  }
+  .num-choose {
+    top: 412px;                /* 388+24 */
+  }
+}
+
+/* 手环10（212×520, ≥101dp 宽度） */
+@media (shape: pill-shaped) and (min-width: 101) {
+  .header-area {
+    display: none;
+  }
+  .pill-header {
+    display: flex;
+    width: 212px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 102px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);
+    background-size: 102px 72px;
+    border-radius: 36px;
+  }
+  .page {
+    width: 212px;
+    height: 520px;
+  }
+  .content-full {
+    width: 212px;
+    height: 520px;
+  }
+  .header-area {
+    width: 212px;
+    height: 80px;
+  }
+  .header-bg {
+    width: 212px;
+    height: 80px;
+  }
+  .hd-title {
+    width: 212px;
+    top: 22px;
+    font-size: 22px;
+  }
+  .hd-back {
+    left: 4px;
+    top: 4px;
+    width: 52px;
+    height: 52px;
+  }
+  .text-container {
+    padding: 6px 10px 20px 10px;
+    width: 212px;
+  }
+  .log-text {
+    width: 192px;              /* 212 - 10*2 */
+  }
+  .bt-bar {
+    top: 418px;                /* 520-102=418 */
+    width: 212px;
+    height: 102px;
+  }
+  .num-choose {
+    top: 442px;
+  }
+}
+</style>

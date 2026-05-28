@@ -1,0 +1,49 @@
+{
+  "package": "com.liangyi.memory.test",
+  "name": "memtest",
+  "versionName": "1.0.0",
+  "versionCode": 1,
+  "minPlatformVersion": 1000,
+  "icon": "/common/logo.png",
+  "deviceTypeList": [
+    "watch"
+  ],
+  "features": [
+    {
+      "name": "system.router"
+    },
+    {
+      "name": "system.file"
+    },
+    {
+      "name": "system.device"
+    }
+  ],
+  "config": {
+    "logLevel": "log",
+    "designWidth": "device-width"
+  },
+  "router": {
+    "entry": "pages/index",
+    "pages": {
+      "pages/index": {
+        "component": "index"
+      },
+      "pages/detail": {
+        "component": "detail"
+      },
+      "pages/log": {
+        "component": "log"
+      },
+      "pages/info": {
+        "component": "info"
+      },
+      "pages/setting": {
+        "component": "setting"
+      },
+      "pages/about": {
+        "component": "about"
+      }
+    }
+  }
+}

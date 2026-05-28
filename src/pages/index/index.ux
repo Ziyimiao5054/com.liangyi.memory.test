@@ -1,0 +1,589 @@
+<template>
+  <div class="page">
+    <!-- 全屏滚动容器，header 必须在 scroll 内部（Vela 触摸事件规则） -->
+    <scroll class="content-full" scroll-y="true" bounces="true">
+      <!-- ========== 方屏顶部栏 ========== -->
+      <div class="header-area">
+        <img src="/common/hd.png" class="header-bg" />                    <!-- 顶部背景图 -->
+        <text class="hd-time">{{ nowTime }}</text>                         <!-- 当前时间 -->
+        <text class="hd-title">内存测试</text>                              <!-- 标题 -->
+        <img src="/common/back.png" @click="goBack" class="hd-back" />     <!-- 返回按钮 -->
+        <img src="/common/More_B@1x.png" @click="goAbout" class="hd-more" />  <!-- 关于按钮（方屏版本） -->
+      </div>
+      <!-- ========== 胶囊屏顶部栏 ========== -->
+      <div class="pill-header">
+        <div class="pill-more-wrap" @click="goAbout">
+          <div class="pill-more"></div>                                     <!-- 关于按钮（胶囊屏版本） -->
+        </div>
+      </div>
+
+      <!-- ========== 卡片内容区 ========== -->
+      <div class="scroll-inner">
+
+        <!-- 开始测试卡片 — 仅测试未运行时显示 -->
+        <div class="card card-primary" onclick="startTest" if="{{ !testRunning }}">
+          <div class="card-left">
+            <text class="card-label">开始测试</text>
+            <text class="card-sub">开始内存测试</text>
+          </div>
+        </div>
+
+        <!-- 测试中卡片 — 仅测试运行时显示 -->
+        <div class="card card-disabled" if="{{ testRunning }}">
+          <div class="card-left">
+            <text class="card-label card-label-disabled">测试中…</text>
+            <text class="card-sub card-sub-disabled">正在运行测试，请稍等</text>
+          </div>
+        </div>
+
+        <!-- 上次测试结果 — 仅当日志文件存在时显示 -->
+        <div class="card" onclick="viewLastResult" if="{{ hasLastResult }}">
+          <div class="card-left">
+            <text class="card-label">测试结果</text>
+            <text class="card-sub">上次测试结果</text>
+          </div>
+        </div>
+
+        <!-- 设备信息 -->
+        <div class="card" onclick="goInfo">
+          <div class="card-left">
+            <text class="card-label">设备信息</text>
+            <text class="card-sub">{{ deviceInfo.product }}</text>
+          </div>
+        </div>
+
+        <!-- 测试参数设置 -->
+        <div class="card" onclick="goSetting">
+          <div class="card-left">
+            <text class="card-label">测试参数</text>
+            <text class="card-sub">内存测试参数</text>
+          </div>
+        </div>
+
+        <!-- 底部留白 -->
+        <div class="spacer"></div>
+      </div>
+    </scroll>
+  </div>
+</template>
+
+<script>
+/* ====== 系统模块导入 ====== */
+import router from "@system.router"   /* 页面跳转 */
+import file from "@system.file"       /* 文件读写 */
+import device from "@system.device"   /* 设备信息 */
+
+/* ====== 常量 ====== */
+var LOG_FILE = "internal://files/memtest_result.txt"   /* 测试结果日志文件路径 */
+var CHUNK_SIZE = 64 * 1024                              /* 单次内存分配大小：64KB */
+var BATCH_SIZE = 80                                      /* 每批分配的块数：80块≈5MB（仅用于 header 展示） */
+var STEP_SIZE = 5                                        /* 每轮分配块数（每分配 STEP_SIZE 块写一次进度日志） */
+var self = null                                          /* 用于异步回调中引用当前页面实例 */
+
+/** 格式化字节数为可读字符串（如 "1.5 GB"） */
+function fmtSize(bytes) {
+  if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB"
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB"
+  return bytes + " B"
+}
+
+/** 获取格式化的当前时间戳（YYYY-MM-DD HH:mm:ss.SSS） */
+function getTimestamp() {
+  var d = new Date()
+  return d.getFullYear() + "-" +
+    ("0" + (d.getMonth() + 1)).slice(-2) + "-" +
+    ("0" + d.getDate()).slice(-2) + " " +
+    ("0" + d.getHours()).slice(-2) + ":" +
+    ("0" + d.getMinutes()).slice(-2) + ":" +
+    ("0" + d.getSeconds()).slice(-2) + "." +
+    ("00" + d.getMilliseconds()).slice(-3)
+}
+
+export default {
+  private: {
+    /* 设备信息对象 */
+    deviceInfo: {
+      model: "加载中…",        /* 设备型号 */
+      product: "-",            /* 设备代号（如"小米手环9"） */
+      osType: "-",             /* 操作系统类型 */
+      osVersionName: "-",      /* 系统版本名 */
+      totalStorage: 0,         /* 总存储（字节） */
+      availStorage: 0,         /* 可用存储（字节） */
+      totalStorageStr: "-",    /* 总存储（格式化后） */
+      availStorageStr: "-"    /* 可用存储（格式化后） */
+    },
+    hasLastResult: false,      /* 是否存在上次测试结果 */
+    testRunning: false,        /* 测试是否正在运行 */
+    nowTime: "00:00",          /* 顶栏时钟显示 */
+    timer: null                /* 时钟定时器ID */
+  },
+
+  /** 页面初始化：启动时钟、加载设备信息、检查上次结果 */
+  onInit() {
+    self = this
+    this.updateTime()
+    this.timer = setInterval(function() {
+      self.updateTime()
+    }, 1000)
+    this.loadDeviceInfo()
+    this.checkLastResult()
+  },
+
+  /** 页面销毁：清除定时器 */
+  onDestroy() {
+    clearInterval(this.timer)
+  },
+
+  /** 更新顶栏时钟（每整秒更新一次） */
+  updateTime() {
+    var d = new Date()
+    var hh = ("0" + d.getHours()).slice(-2)
+    var mm = ("0" + d.getMinutes()).slice(-2)
+    this.nowTime = hh + ":" + mm
+  },
+
+  /** 页面显示时：刷新上次结果状态（可能被其他页面修改了日志） */
+  onShow() {
+    this.checkLastResult()
+  },
+
+  /** 异步加载设备信息：型号、代号、系统、存储 */
+  loadDeviceInfo() {
+    device.getInfo({
+      success: function(ret) {
+        self.deviceInfo.model = ret.model || "未知"
+        var product = ret.product || ret.brand || ret.manufacturer || "-"
+        product = product.replace("Xiaomi Smart Band", "小米手环")  /* 英文代号转中文 */
+        self.deviceInfo.product = product
+        self.deviceInfo.osType = ret.osType || "-"
+        self.deviceInfo.osVersionName = ret.osVersionName || "-"
+      },
+      fail: function() {
+        self.deviceInfo.model = "读取失败"
+      }
+    })
+    device.getTotalStorage({
+      success: function(ret) {
+        self.deviceInfo.totalStorage = ret.totalStorage
+        self.deviceInfo.totalStorageStr = fmtSize(ret.totalStorage)
+      },
+      fail: function() {
+        self.deviceInfo.totalStorageStr = "读取失败"
+      }
+    })
+    device.getAvailableStorage({
+      success: function(ret) {
+        self.deviceInfo.availStorage = ret.availableStorage
+        self.deviceInfo.availStorageStr = fmtSize(ret.availableStorage)
+      },
+      fail: function() {
+        self.deviceInfo.availStorageStr = "读取失败"
+      }
+    })
+  },
+
+  /** 检查测试结果日志文件是否存在 */
+  checkLastResult() {
+    file.access({
+      uri: LOG_FILE,
+      success: function() {
+        self.hasLastResult = true
+      },
+      fail: function() {
+        self.hasLastResult = false
+      }
+    })
+  },
+
+  /** 覆写日志文件（写入测试开头信息） */
+  writeOnce: function(text, callback) {
+    file.writeText({
+      uri: LOG_FILE,
+      text: text,
+      append: false,            /* 覆盖写入 */
+      success: function() {
+        if (callback) callback()
+      },
+      fail: function(data, code) {
+        console.log("写日志失败, code=" + code)
+        if (callback) callback()
+      }
+    })
+  },
+
+  /** 开始内存压力测试 */
+  startTest() {
+    if (this.testRunning) return   /* 防止重复触发 */
+    self = this
+    this.testRunning = true
+
+    var ts = getTimestamp()
+    var header =
+      "=== 内存压力测试开始 ===\n" +
+      "时间: " + ts + "\n" +
+      "设备型号: " + self.deviceInfo.model + "\n" +
+      "设备代号: " + self.deviceInfo.product + "\n" +
+      "系统: " + self.deviceInfo.osType + " " + self.deviceInfo.osVersionName + "\n" +
+      "单次分配: " + (CHUNK_SIZE / 1024) + " KB, 每批 " + BATCH_SIZE + " 块\n" +
+      "填充: 全填 0xFF\n" +
+      "---\n"
+
+    self.writeOnce(header, function() {
+      self.allocBatch(0, [])           /* 写入开头信息后开始分配 */
+    })
+  },
+
+  /** 异步递归分配，每次分配 STEP_SIZE 块后写入进度日志（防止崩溃丢数据） */
+  allocBatch: function(count, chunks) {
+    if (count === undefined) count = 0
+    if (chunks === undefined) chunks = []
+
+    /* 分配 STEP_SIZE 块 */
+    for (var i = 0; i < STEP_SIZE; i++) {
+      try {
+        var buf = new Uint8Array(CHUNK_SIZE)
+        buf.fill(0xFF)                     /* 全填 0xFF 防止惰性分配 */
+        chunks.push(buf)                   /* 保持引用防止GC回收 */
+        count++
+      } catch (e) {
+        /* 本轮分配中内存耗尽，先写最终结果再返回 */
+        var totalMB = ((count * CHUNK_SIZE) / (1024 * 1024)).toFixed(1)
+        self.testRunning = false
+        chunks = null
+
+        var footer =
+          "---\n" +
+          "内存耗尽！最后一次成功分配: " + count + " 块\n" +
+          "累计分配: " + totalMB + " MB\n" +
+          "错误: " + (e.message || String(e)) + "\n" +
+          "结束时间: " + getTimestamp() + "\n" +
+          "=== 测试结束 ===\n"
+
+        file.writeText({
+          uri: LOG_FILE,
+          text: footer,
+          append: true,
+          success: function() {
+            console.log("测试结果已保存")
+          },
+          fail: function(data, code) {
+            console.log("保存测试结果失败, code=" + code)
+          }
+        })
+        return
+      }
+    }
+
+    /* 分配成功，写入进度日志 */
+    var currentMB = ((count * CHUNK_SIZE) / (1024 * 1024)).toFixed(1)
+    var progressLine = getTimestamp() + " 已分配: " + count + " 块 (" + currentMB + " MB)\n"
+
+    file.writeText({
+      uri: LOG_FILE,
+      text: progressLine,
+      append: true,
+      success: function() {
+        /* 写完后调度下一次分配（setTimeout 让出事件循环） */
+        setTimeout(function() {
+          self.allocBatch(count, chunks)
+        }, 0)
+      },
+      fail: function(data, code) {
+        console.log("写入进度日志失败, code=" + code)
+        /* 即使写失败也继续分配 */
+        setTimeout(function() {
+          self.allocBatch(count, chunks)
+        }, 0)
+      }
+    })
+  },
+
+  /* ====== 页面跳转 ====== */
+
+  /** 查看上次测试结果 */
+  viewLastResult() {
+    router.push({ uri: "/pages/detail" })
+  },
+
+  /** 打开关于页面 */
+  goAbout() {
+    router.push({ uri: "/pages/about" })
+  },
+
+  /** 打开设备信息页面 */
+  goInfo() {
+    router.push({ uri: "/pages/info" })
+  },
+
+  /** 打开测试参数设置页面 */
+  goSetting() {
+    router.push({ uri: "/pages/setting" })
+  },
+
+  /** 返回上一页 */
+  goBack() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+/* ====== 全局页面 ====== */
+.page {
+  width: 336px;                /* 方屏定位尺寸：小米手环9 Pro */
+  height: 480px;
+  background-color: #000000;   /* 纯黑背景，适配AMOLED屏 */
+}
+
+/* ====== 全屏滚动容器 ====== */
+.content-full {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+}
+
+/* ====== 方屏顶部 Header ====== */
+.header-area {
+  width: 336px;
+  height: 102px;               /* 顶部栏高度，与 hd.png 图片尺寸匹配 */
+  position: relative;          /* 供子元素绝对定位 */
+}
+.header-bg {
+  width: 336px;
+  height: 102px;
+}
+.hd-title {
+  position: absolute;
+  left: 78px;                  /* 居中：78+180/2 ≈ 168 */
+  top: 35px;
+  width: 180px;
+  height: 42px;
+  text-align: center;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.hd-back {
+  position: absolute;
+  left: 6px;                   /* 返回按钮固定在左上角 */
+  top: 6px;
+  width: 72px;
+  height: 72px;
+}
+.hd-time {
+  position: absolute;
+  left: 78px;
+  top: 7px;                    /* 时间在标题上方，留出top padding */
+  width: 180px;
+  height: 32px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);   /* 半透明白色，弱化视觉权重 */
+}
+.hd-more {
+  position: absolute;
+  left: 258px;                 /* 更多按钮固定在右上角：336-72-6=258 */
+  top: 6px;
+  width: 72px;
+  height: 72px;
+}
+
+/* ====== 胶囊屏顶部 Header（方屏默认隐藏）====== */
+.pill-header {
+  display: none;               /* 方屏隐藏，胶囊屏媒体查询中显示 */
+}
+
+/* ====== 卡片内容区域 ====== */
+.scroll-inner {
+  margin-top: -2px;            /* 整体上移2px，不改变卡片间距 */
+  padding: 0 6px 20px 6px;   /* 左右边距6px（原13px收窄7px），底部留白20px */
+  flex-direction: column;
+}
+
+/* ====== 卡片通用样式 ====== */
+.card {
+  width: 324px;                /* 336 - 6*2，扣除左右padding */
+  height: 112px;
+  margin-top: 8px;             /* 卡片间距 */
+  background-color: #262626;   /* 深灰卡片背景 */
+  border-radius: 36px;         /* 大圆角 */
+  flex-direction: row;
+  align-items: center;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+.card-left {
+  flex-direction: column;      /* 标题+副标题垂直排列 */
+  flex: 1;                     /* 撑满剩余宽度 */
+}
+.card-label {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: bold;
+  color: #ffffff;
+  lines: 1;                    /* 单行显示，超出省略 */
+}
+.card-sub {
+  font-size: 28px;
+  line-height: 37px;
+  font-weight: bold;
+  color: rgba(255,255,255,0.6); /* 副标题半透明白色 */
+  margin-top: 4px;             /* 与主标题的垂直间距 */
+  lines: 1;
+}
+
+/* ====== 主操作卡片 — 蓝色高亮 ====== */
+.card-primary {
+  background-color: #0D6EFF;   /* Google Blue */
+}
+.card-primary .card-label {
+  color: #ffffff;
+}
+.card-primary .card-sub {
+  color: rgba(255,255,255,0.7); /* 副标题略亮于普通卡片 */
+}
+
+/* ====== 禁用/测试中卡片 — 灰色降低视觉权重 ====== */
+.card-disabled {
+  background-color: #1a1a1a;   /* 极深灰 */
+}
+.card-label-disabled {
+  color: #666666;
+}
+.card-sub-disabled {
+  color: #444444;
+}
+
+/* ====== 底部留白 ====== */
+.spacer {
+  height: 20px;
+}
+
+/* ========== 胶囊屏适配 ========== */
+/* 手环9（192×490, ≤100dp 宽度） */
+@media (shape: pill-shaped) and (max-width: 100) {
+  .page {
+    width: 192px;
+    height: 490px;
+  }
+  .content-full {
+    width: 192px;
+    height: 490px;
+  }
+  /* 方屏 header 隐藏，胶囊屏 header 显示 */
+  .header-area {
+    display: none;
+  }
+  .pill-header {
+    display: flex;
+    width: 192px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    background-image: url(/common/More胶囊.png);    /* 胶囊屏专用关于按钮 */
+    background-size: 102px 72px;
+  }
+  .scroll-inner {
+    padding: 0 4px 16px 4px;   /* 胶囊屏左右边距从13缩至4 */
+  }
+  .card {
+    width: 184px;              /* 192 - 4*2 */
+    height: 110px;             /* 胶囊屏加高卡片 */
+    border-radius: 27px;       /* 胶囊屏圆角略小 */
+    padding-left: 14px;
+    padding-right: 16px;
+    margin-top: 8px;
+  }
+  .card-label {
+    font-size: 32px;
+    line-height: 38px;
+  }
+  .card-sub {
+    font-size: 28px;
+    line-height: 34px;
+    margin-top: 6px;           /* 副标题与主标题间距 */
+  }
+  .spacer {
+    height: 16px;
+  }
+}
+
+/* 手环10（212×520, ≥101dp 宽度） */
+@media (shape: pill-shaped) and (min-width: 101) {
+  .page {
+    width: 212px;
+    height: 520px;
+  }
+  .content-full {
+    width: 212px;
+    height: 520px;
+  }
+  .header-area {
+    display: none;
+  }
+  .pill-header {
+    display: flex;
+    width: 212px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 102px;
+    height: 72px;
+    background-image: url(/common/More胶囊.png);
+    background-size: 102px 72px;
+    border-radius: 36px;
+  }
+  .scroll-inner {
+    padding: 0 4px 16px 4px;
+  }
+  .card {
+    width: 204px;              /* 212 - 4*2 */
+    height: 110px;
+    border-radius: 27px;
+    padding-left: 14px;
+    padding-right: 16px;
+    margin-top: 8px;
+  }
+  .card-label {
+    font-size: 32px;
+    line-height: 38px;
+  }
+  .card-sub {
+    font-size: 28px;
+    line-height: 34px;
+    margin-top: 9px;
+  }
+  .spacer {
+    height: 16px;
+  }
+}
+</style>

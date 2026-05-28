@@ -1,0 +1,409 @@
+<template>
+  <div class="page">
+
+    <!-- 全屏滚动容器 -->
+    <scroll class="content-full" scroll-y="true" bounces="true">
+
+      <!-- ========== 方屏顶部栏 ========== -->
+      <div class="header-area">
+        <img src="/common/hd.png" class="header-bg" />
+        <text class="hd-time">{{ nowTime }}</text>
+        <text class="hd-title">测试结果</text>
+        <img src="/common/back.png" @click="goBack" class="hd-back" />
+      </div>
+      <!-- ========== 胶囊屏顶部栏 ========== -->
+      <div class="pill-header">
+        <div class="pill-more-wrap" @click="goBack">
+          <div class="pill-more"></div>
+        </div>
+      </div>
+
+      <!-- ========== 内容区域 ========== -->
+      <div class="scroll-inner">
+
+        <!-- 填充内存卡片 -->
+        <div class="card">
+          <div class="card-left">
+            <text class="card-label">填充内存</text>
+            <text class="card-sub">{{ allocatedStr }}</text>    <!-- 动态显示分配量 -->
+          </div>
+        </div>
+
+        <!-- 测试日志卡片（可点击跳转） -->
+        <div class="card" onclick="viewLog">
+          <div class="card-left">
+            <text class="card-label">测试日志</text>
+            <text class="card-sub">阅读上次测试日志</text>
+          </div>
+        </div>
+
+        <!-- 设备信息卡片（可点击跳转） -->
+        <div class="card" onclick="goInfo">
+          <div class="card-left">
+            <text class="card-label">设备信息</text>
+            <text class="card-sub">关于此设备</text>
+          </div>
+        </div>
+
+        <!-- 底部留白 -->
+        <div class="spacer"></div>
+      </div>
+    </scroll>
+  </div>
+</template>
+
+<script>
+/* ====== 系统模块导入 ====== */
+import router from "@system.router"
+import file from "@system.file"
+import device from "@system.device"
+
+var LOG_FILE = "internal://files/memtest_result.txt"   /* 日志文件路径 */
+
+export default {
+  private: {
+    allocatedStr: "-",            /* 累计分配量（从日志解析） */
+    deviceModel: "-",             /* 设备型号 */
+    osVersion: "-",               /* 系统版本 */
+    nowTime: "00:00",             /* 顶栏时钟 */
+    timer: null                   /* 时钟定时器 */
+  },
+
+  /** 页面初始化：启动时钟、读取测试结果、获取设备信息 */
+  onInit() {
+    var self = this
+
+    self.updateTime()
+    self.timer = setInterval(function() {
+      self.updateTime()
+    }, 1000)
+
+    /* 获取设备信息 */
+    device.getInfo({
+      success: function(ret) {
+        self.deviceModel = ret.model || "未知"
+        self.osVersion = (ret.osType || "") + " " + (ret.osVersionName || "")
+      }
+    })
+
+    /* 读取日志文件，提取累计分配量 */
+    file.readText({
+      uri: LOG_FILE,
+      success: function(data) {
+        var text = data.text || ""
+        var lines = text.split("\n")
+        var allocated = ""
+
+        /* 优先取最终结果行的 "累计分配:" */
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf("累计分配:") !== -1) {
+            allocated = lines[i].replace("累计分配:", "").trim()
+          }
+        }
+
+        /* 无最终结果，回退到最后一行的 "已分配:" */
+        if (!allocated) {
+          for (var j = lines.length - 1; j >= 0; j--) {
+            if (lines[j].indexOf("已分配:") !== -1) {
+              /* 提取 "已分配: N 块 (X.X MB)" 中的 MB 部分 */
+              var match = lines[j].match(/\(([^)]+)\)/)
+              allocated = match ? match[1] : lines[j].replace(/.*已分配:\s*/, "").trim()
+              break
+            }
+          }
+        }
+
+        if (allocated) {
+          self.allocatedStr = allocated
+        } else {
+          self.allocatedStr = "暂无数据"
+        }
+      },
+      fail: function() {
+        self.allocatedStr = "读取失败"
+      }
+    })
+  },
+
+  /** 页面销毁：清除定时器 */
+  onDestroy() {
+    clearInterval(this.timer)
+  },
+
+  /** 更新顶栏时钟 */
+  updateTime() {
+    var d = new Date()
+    var hh = ("0" + d.getHours()).slice(-2)
+    var mm = ("0" + d.getMinutes()).slice(-2)
+    this.nowTime = hh + ":" + mm
+  },
+
+  /* ====== 页面跳转 ====== */
+
+  goBack() {
+    router.back()
+  },
+  viewLog() {
+    router.push({ uri: "/pages/log" })
+  },
+  goInfo() {
+    router.push({ uri: "/pages/info" })
+  }
+}
+</script>
+
+<style>
+/* ====== 全局页面 ====== */
+.page {
+  width: 336px;                /* 方屏定位尺寸 */
+  height: 480px;
+  background-color: #000000;   /* AMOLED纯黑 */
+}
+
+/* ====== 全屏滚动容器 ====== */
+.content-full {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+}
+
+/* ====== 方屏顶部 Header ====== */
+.header-area {
+  width: 336px;
+  height: 102px;               /* 与 hd.png 高度匹配 */
+  position: relative;
+}
+.header-bg {
+  width: 336px;
+  height: 102px;
+}
+.hd-time {
+  position: absolute;
+  left: 78px;
+  top: 7px;
+  width: 180px;
+  height: 32px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);
+}
+.hd-title {
+  position: absolute;
+  left: 78px;
+  top: 35px;
+  width: 180px;
+  height: 42px;
+  text-align: center;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.hd-back {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 72px;
+  height: 72px;
+}
+
+/* ====== 卡片内容区域 ====== */
+.scroll-inner {
+  margin-top: -2px;            /* 整体上移2px，不改变卡片间距 */
+  padding: 0 6px 20px 6px;   /* 左右边距6px（原13px收窄7px） */
+  flex-direction: column;
+}
+
+/* ====== 卡片通用样式 ====== */
+.card {
+  width: 324px;                /* 336 - 6*2 */
+  height: 112px;
+  margin-top: 8px;
+  background-color: #262626;   /* 深灰卡片 */
+  border-radius: 36px;
+  flex-direction: row;
+  align-items: center;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+.card-left {
+  flex-direction: column;
+  flex: 1;
+}
+.card-label {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: bold;
+  color: #ffffff;
+  lines: 1;
+}
+.card-sub {
+  font-size: 28px;
+  line-height: 37px;
+  font-weight: bold;
+  color: rgba(255,255,255,0.6);
+  margin-top: 4px;             /* 与主标题间距 */
+  lines: 1;
+}
+.spacer {
+  height: 20px;
+}
+
+/* ====== 胶囊屏顶部 Header（方屏默认隐藏）====== */
+.pill-header {
+  display: none;
+}
+
+/* ========== 胶囊屏适配 ========== */
+/* 手环9（192×490, ≤100dp 宽度） */
+@media (shape: pill-shaped) and (max-width: 100) {
+  .page {
+    width: 192px;
+    height: 490px;
+  }
+  .content-full {
+    width: 192px;
+    height: 490px;
+  }
+  .header-area {
+    display: none;
+  }
+  .header-bg {
+    width: 192px;
+    height: 80px;
+  }
+  .hd-title {
+    width: 192px;
+    top: 22px;
+    font-size: 22px;
+  }
+  .hd-back {
+    left: 4px;
+    top: 4px;
+    width: 52px;
+    height: 52px;
+  }
+  .pill-header {
+    display: flex;
+    width: 192px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 92px;
+    height: 72px;
+    border-radius: 32px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 92px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);    /* 胶囊屏返回按钮 */
+    background-size: 92px 72px;
+    border-radius: 32px;
+  }
+  .scroll-inner {
+    padding: 0 8px 16px 8px;
+  }
+  .card {
+    width: 176px;              /* 192 - 8*2 */
+    height: 110px;
+    border-radius: 27px;
+    padding-left: 20px;
+    padding-right: 12px;
+  }
+  .card-label {
+    font-size: 32px;
+    line-height: 38px;
+  }
+  .card-sub {
+    font-size: 28px;
+    line-height: 34px;
+    margin-top: 9px;
+  }
+  .spacer {
+    height: 16px;
+  }
+}
+
+/* 手环10（212×520, ≥101dp 宽度） */
+@media (shape: pill-shaped) and (min-width: 101) {
+  .page {
+    width: 212px;
+    height: 520px;
+  }
+  .content-full {
+    width: 212px;
+    height: 520px;
+  }
+  .header-area {
+    display: none;
+  }
+  .header-bg {
+    width: 212px;
+    height: 80px;
+  }
+  .hd-title {
+    width: 212px;
+    top: 22px;
+    font-size: 22px;
+  }
+  .hd-back {
+    left: 4px;
+    top: 4px;
+    width: 52px;
+    height: 52px;
+  }
+  .pill-header {
+    display: flex;
+    width: 212px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .pill-more-wrap {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 102px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);
+    background-size: 102px 72px;
+    border-radius: 36px;
+  }
+  .scroll-inner {
+    padding: 0 8px 16px 8px;
+  }
+  .card {
+    width: 196px;              /* 212 - 8*2 */
+    height: 110px;
+    border-radius: 27px;
+    padding-left: 20px;
+    padding-right: 12px;
+  }
+  .card-label {
+    font-size: 32px;
+    line-height: 38px;
+  }
+  .card-sub {
+    font-size: 28px;
+    line-height: 34px;
+    margin-top: 9px;
+  }
+  .spacer {
+    height: 16px;
+  }
+}
+</style>

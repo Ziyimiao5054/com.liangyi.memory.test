@@ -1,0 +1,170 @@
+<template>
+  <div class="page">
+    <!-- ========== 方屏背景图 ========== -->
+    <img src="/common/about.png" class="about-bg" />
+    <!-- ========== 胶囊屏背景图（方屏隐藏） ========== -->
+    <div class="about-bg-capsule-wrap">
+      <img src="/common/胶囊about.png" class="about-bg-capsule" />
+    </div>
+    <!-- ========== 方屏返回按钮 ========== -->
+    <img src="/common/back.png" @click="goBack" class="hd-back" />
+    <!-- ========== 胶囊屏返回按钮（方屏隐藏） ========== -->
+    <div class="pill-header">
+      <div class="pill-more-wrap" @click="goBack">
+        <div class="pill-more"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+/* ====== 系统模块导入 ====== */
+import router from "@system.router"
+
+export default {
+  /** 返回上一页 */
+  goBack() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+/* ====== 全局页面 ====== */
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #000000;
+  position: relative;          /* 配合绝对定位子元素 */
+}
+
+/* ====== 方屏全屏背景 ====== */
+.about-bg {
+  width: 336px;
+  height: 480px;
+}
+
+/* ====== 胶囊屏全屏背景（方屏默认隐藏） ====== */
+.about-bg-capsule-wrap {
+  display: none;
+}
+.about-bg-capsule {
+  width: 192px;
+  height: 490px;
+}
+
+/* ====== 方屏返回按钮（绝对定位覆盖在背景上方） ====== */
+.hd-back {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 72px;
+  height: 72px;
+}
+
+/* ====== 胶囊屏顶部 Header（方屏默认隐藏）====== */
+.pill-header {
+  display: none;
+}
+
+/* ========== 胶囊屏适配 ========== */
+/* 手环9（192×490, ≤100dp 宽度） */
+@media (shape: pill-shaped) and (max-width: 100) {
+  .page {
+    width: 192px;
+    height: 490px;
+  }
+  /* 隐藏方屏元素，显示胶囊屏对应元素 */
+  .about-bg {
+    display: none;
+  }
+  .hd-back {
+    display: none;
+  }
+  .about-bg-capsule-wrap {
+    display: flex;
+    width: 192px;
+    height: 490px;
+    margin-top: 5px;
+  }
+  /* 胶囊屏返回按钮（绝对定位在顶部） */
+  .pill-header {
+    display: flex;
+    width: 192px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .pill-more-wrap {
+    width: 92px;
+    height: 72px;
+    border-radius: 32px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 92px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);    /* 胶囊屏专用返回按钮 */
+    background-size: 92px 72px;
+    border-radius: 32px;
+  }
+}
+
+/* 手环10（212×520, ≥101dp 宽度） */
+@media (shape: pill-shaped) and (min-width: 101) {
+  .page {
+    width: 212px;
+    height: 520px;
+  }
+  .about-bg {
+    display: none;
+  }
+  .hd-back {
+    display: none;
+  }
+  .about-bg-capsule-wrap {
+    display: flex;
+    width: 212px;
+    height: 520px;
+    margin-top: 5px;
+  }
+  .about-bg-capsule {
+    width: 212px;
+    height: 520px;
+  }
+  .pill-header {
+    display: flex;
+    width: 212px;
+    height: 92px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .pill-more-wrap {
+    width: 102px;
+    height: 72px;
+    border-radius: 36px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .pill-more {
+    width: 102px;
+    height: 72px;
+    background-image: url(/common/Back_胶囊.png);
+    background-size: 102px 72px;
+    border-radius: 36px;
+  }
+}
+</style>
