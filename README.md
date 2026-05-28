@@ -1,1 +1,13 @@
-# com.liangyi.memory.test
+# 开源许可
+
+项目使用 AGPL-3.0 许可协议，要求分发和修改的同时也公开源码，且使用相同的许可协议。
+
+### 功能
+
+一个用于测试搭载Xiaomi Vela OS的小米手环/手表快应用可用的运行内存的工具
+
+日志阅读器使用了喵喵电子书的阅读器
+
+设计稿参考了喵喵电子书的设计稿设计而成
+
+喵喵电子书仓库地址:https://github.com/BandBBS-Vela-Dev/com.bandbbs.ebook?tab=readme-ov-file
